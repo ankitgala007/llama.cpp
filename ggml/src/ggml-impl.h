@@ -104,6 +104,22 @@ static inline bool ggml_impl_is_view(const struct ggml_tensor * t) {
     return t->view_src != NULL;
 }
 
+static inline bool ggml_flash_attn_ext_has_bias(const struct ggml_tensor * a) {
+    if (a->op != GGML_OP_FLASH_ATTN_EXT) {
+        return false;
+    }
+
+    return a->src[6] != NULL;
+}
+
+static inline bool ggml_flash_attn_ext_bias_is_indexed(const struct ggml_tensor * a) {
+    if (!ggml_flash_attn_ext_has_bias(a)) {
+        return false;
+    }
+
+    return a->src[7] != NULL;
+}
+
 static inline float ggml_compute_softplus_f32(float input) {
     return (input > 20.0f) ? input : log1pf(expf(input));
 }

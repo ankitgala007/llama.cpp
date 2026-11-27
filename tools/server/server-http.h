@@ -53,7 +53,7 @@ struct server_http_req {
     std::string query_string; // query parameters string (e.g. "action=save")
     std::string body;
     std::map<std::string, uploaded_file> files; // used for file uploads (form data)
-    const std::function<bool()> & should_stop;
+    const std::function<bool()> should_stop; // true once the client is gone or the server is stopping
 
     std::string get_param(const std::string & key, const std::string & def = "") const {
         auto it = params.find(key);

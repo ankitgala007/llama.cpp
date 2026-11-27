@@ -3,6 +3,8 @@ import requests
 import signal
 import socket
 import sys
+import threading
+import time
 from utils import *
 
 server = ServerPreset.tinyllama2()
@@ -171,3 +173,45 @@ def test_server_ctrl_break():
     server.process.send_signal(signal.CTRL_BREAK_EVENT)
     # exit code 0 means a clean shutdown, the default handler would end it with STATUS_CONTROL_C_EXIT
     assert server.process.wait(timeout=60) == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM is not a console control event on Windows")
+@pytest.mark.parametrize("headers", [
+    {},
+    {"X-Conversation-Id": "conv-sigterm-test"},  # resumable stream
+])
+def test_server_sigterm_with_stream_in_flight(headers):
+    global server
+    server.enable_ctx_shift = True
+    server.n_predict = -1
+    server.start()
+    # context shift and ignore_eos keep the stream open until the server stops
+    res = requests.post(server.make_url("/completion"), json={
+        "prompt": "I believe the meaning of life is",
+        "n_predict": -1,
+        "ignore_eos": True,
+        "stream": True,
+        "sse_ping_interval": 30,
+    }, headers=headers, stream=True, timeout=60)
+    try:
+        assert res.status_code == 200
+        lines = res.iter_lines()
+        next(line for line in lines if line)
+
+        # keep reading, as a real client does, so the stream stays open until shutdown
+        def drain():
+            try:
+                for _ in lines:
+                    pass
+            except Exception:
+                pass
+
+        threading.Thread(target=drain, daemon=True).start()
+        time.sleep(1)
+        start = time.monotonic()
+        server.process.send_signal(signal.SIGTERM)
+        assert server.process.wait(timeout=60) == 0
+        # the stream must stop on shutdown, not wait for the next SSE ping (30 s)
+        assert time.monotonic() - start < 10
+    finally:
+        res.close()

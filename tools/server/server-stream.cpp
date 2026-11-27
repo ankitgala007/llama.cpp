@@ -63,12 +63,15 @@ private:
 
 // process wide manager, lifecycle controlled by llama-server main() via start_gc/stop_gc
 static stream_session_manager g_stream_sessions;
+// set on shutdown, so resumable producers stop waiting for results that will not come
+static std::atomic<bool> g_stream_stopping = false;
 
 void server_stream_session_manager_start() {
     g_stream_sessions.start_gc();
 }
 
 void server_stream_session_manager_stop() {
+    g_stream_stopping.store(true);
     g_stream_sessions.stop_gc();
 }
 
@@ -622,7 +625,7 @@ bool server_res_spipe::conn_alive() {
 bool server_res_spipe::should_stop() {
     if (spipe) {
         // note: if DELETE /v1/stream is called for this conv, is_cancelled() will be true
-        return spipe->is_cancelled();
+        return spipe->is_cancelled() || g_stream_stopping.load();
     } else {
         return !conn_alive();
     }
